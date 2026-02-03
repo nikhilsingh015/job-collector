@@ -12,6 +12,7 @@ This script:
 import argparse
 import sys
 import csv
+import json
 from datetime import datetime
 import os
 import logging
@@ -68,6 +69,47 @@ def find_cv_file(directory: str = ".") -> str:
     )
 
 
+def save_to_json(all_jobs: list, output_filename: str) -> str:
+    """
+    Save all job results to a JSON file.
+
+    Args:
+        all_jobs: List of job dictionaries.
+        output_filename: Output JSON filename.
+
+    Returns:
+        Path to the output file.
+    """
+    logger = logging.getLogger(__name__)
+
+    if not all_jobs:
+        logger.warning("No jobs to save")
+        return ""
+
+    # Ensure data directory exists
+    os.makedirs(os.path.dirname(output_filename), exist_ok=True)
+
+    try:
+        # Remove duplicates based on URL
+        seen_urls = set()
+        unique_jobs = []
+        for job in all_jobs:
+            url = job.get("url", "")
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                unique_jobs.append(job)
+
+        with open(output_filename, "w", encoding="utf-8") as f:
+            json.dump(unique_jobs, f, indent=2, ensure_ascii=False)
+
+        logger.info(f"Saved {len(unique_jobs)} unique jobs to {output_filename}")
+        return output_filename
+
+    except Exception as e:
+        logger.error(f"Error saving jobs to JSON: {e}")
+        return ""
+
+
 def merge_job_results(all_jobs: list, output_filename: str) -> str:
     """
     Merge all job results into a single CSV file.
@@ -94,6 +136,7 @@ def merge_job_results(all_jobs: list, output_filename: str) -> str:
         "location",
         "salary",
         "description",
+        "posted_date",
         "url",
         "source",
         "search_query",
@@ -145,8 +188,8 @@ def run_scrapers(query: str, location: str, pages: int, storage: JobStorage) -> 
 
     scrapers = [
         IndeedScraper(),
-        IrishJobsScraper(),
-        LinkedInScraper(),
+        # IrishJobsScraper(),  # Disabled - blocked by Akamai bot protection
+        # LinkedInScraper(),  # Temporarily disabled - requires auth/login
     ]
 
     for scraper in scrapers:
@@ -291,9 +334,11 @@ Examples:
         # Step 5: Save results
         date_str = datetime.now().strftime("%Y%m%d")
         output_file = args.output or f"data/jobs_{date_str}.csv"
+        json_file = f"data/jobs_{date_str}.json"
 
         if all_jobs:
             output_path = merge_job_results(all_jobs, output_file)
+            json_path = save_to_json(all_jobs, json_file)
 
             # Generate HTML report
             reporter = HtmlReporter()
@@ -310,6 +355,7 @@ Examples:
             logger.info(f"Queries searched: {len(queries)}")
             logger.info(f"Total unique jobs found: {len(all_jobs)}")
             logger.info(f"Output CSV: {output_path}")
+            logger.info(f"Output JSON: {json_path}")
             if report_file:
                 logger.info(f"HTML Report: {report_file}")
             logger.info("=" * 80)

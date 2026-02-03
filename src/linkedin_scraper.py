@@ -2,7 +2,7 @@
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 from src.base_scraper import BaseScraper
 from src.utils import random_delay
-from src.config import PAGE_LOAD_TIMEOUT, USER_AGENTS
+from src.config import USER_AGENTS
 import random
 
 
@@ -29,7 +29,7 @@ class LinkedInScraper(BaseScraper):
 
                 context = browser.new_context(
                     user_agent=user_agent,
-                    viewport={'width': 1280, 'height': 800}
+                    viewport={'width': 1920, 'height': 1080}
                 )
 
                 page = context.new_page()
@@ -42,21 +42,29 @@ class LinkedInScraper(BaseScraper):
                         search_url = f"{self.base_url}/jobs/search/?keywords={query}&location={location}&start={start}"
                         
                         self.logger.info(f"Fetching page {page_num + 1} from LinkedIn")
-                        page.goto(search_url, wait_until='networkidle', timeout=PAGE_LOAD_TIMEOUT)
+                        
+                        try:
+                            # Use domcontentloaded instead of networkidle (faster and more reliable)
+                            page.goto(search_url, wait_until='domcontentloaded', timeout=60000)
+                            page.wait_for_timeout(3000)  # Wait for dynamic content
+                        except PlaywrightTimeoutError:
+                            self.logger.error(f"Timeout loading page {page_num + 1}")
+                            continue
+                        
+                        # Check if we hit an auth wall
+                        if "authwall" in page.url or "login" in page.url:
+                            self.logger.error("Hit LinkedIn Authwall. LinkedIn requires login for job searches.")
+                            break
                         
                         # Wait for job cards
                         card_selector = self.config['selectors']['job_card']
                         if isinstance(card_selector, list):
-                            card_selector = card_selector[0]  # Playwright needs a single selector string usually or we try catch
+                            card_selector = card_selector[0]
 
                         try:
                             page.wait_for_selector(card_selector, timeout=10000)
                         except PlaywrightTimeoutError:
                             self.logger.warning(f"Timeout waiting for job listings on page {page_num + 1}")
-                            # Check if we hit a captcha or auth wall
-                            if "authwall" in page.url or "login" in page.url:
-                                self.logger.error("Hit LinkedIn Authwall. Stopping.")
-                                break
                             continue
                         
                         # Scroll

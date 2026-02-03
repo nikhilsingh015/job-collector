@@ -350,36 +350,28 @@ class CVParser:
         """Generate relevant job search queries based on profile."""
         queries = []
 
-        # Based on title
-        if self.profile["title"]:
-            queries.append(self.profile["title"])
-
-        # Based on common role variations
-        title_variations = [
-            "Software Engineer",
+        # Priority job titles to search for
+        priority_titles = [
             "Lead Software Engineer",
-            "Senior Software Engineer",
-            "Python Developer",
-            "Backend Developer",
-            "Platform Engineer",
+            "Backend Engineer",
+            "Software Engineer",
             "Data Engineer",
-            "AI Engineer",
-            "Machine Learning Engineer",
             "Cloud Engineer",
             "DevOps Engineer",
-            "Full Stack Developer",
+            "AI Engineer",
+            "ML Engineer",
+            "MLOps Engineer",
         ]
 
-        # Add queries that match skills in the profile
-        text_lower = self.raw_text.lower()
-        for title in title_variations:
-            title_words = title.lower().split()
-            if any(word in text_lower for word in title_words):
-                if title not in queries:
-                    queries.append(title)
+        # Add all priority titles first
+        queries.extend(priority_titles)
 
-        # Limit to most relevant queries
-        self.profile["job_search_queries"] = queries[:8]
+        # If CV has a specific title not in the list, add it too
+        if self.profile["title"] and self.profile["title"] not in queries:
+            queries.insert(0, self.profile["title"])
+
+        # Limit to 10 most relevant queries
+        self.profile["job_search_queries"] = queries[:10]
         return self.profile["job_search_queries"]
 
     def get_search_location(self) -> str:

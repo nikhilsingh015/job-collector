@@ -28,7 +28,7 @@ SCRAPER_CONFIG = {
             'company': ['span.companyName', 'span[data-testid="company-name"]'],
             'location': ['div.companyLocation', 'div[data-testid="text-location"]'],
             'salary': ['div.salary-snippet', 'div[data-testid="attribute_snippet_testid"]'],
-            'description': ['div.job-snippet', 'div[data-testid="job-snippet"]'],
+            'description': ['div.job-snippet', 'div[data-testid="job-snippet"]', 'div.jobCardShelfContainer', 'ul.jobCardShelfContainer', 'table.jobCardShelfContainer'],
         }
     },
     'irishjobs': {
