@@ -2,8 +2,9 @@
 import requests
 from bs4 import BeautifulSoup
 from src.base_scraper import BaseScraper
-from src.utils import get_random_user_agent, random_delay
-import logging
+from src.utils import random_delay
+from src.network import create_session
+from src.config import REQUEST_TIMEOUT
 
 
 class IndeedScraper(BaseScraper):
@@ -11,29 +12,22 @@ class IndeedScraper(BaseScraper):
     
     def __init__(self):
         super().__init__('indeed')
-        self.base_url = 'https://ie.indeed.com'
+        self.base_url = self.config.get('base_url', 'https://ie.indeed.com')
+        self.session = create_session()
     
     def scrape(self, query, location, pages=1):
         """
         Scrape jobs from Indeed.ie.
-        
-        Args:
-            query: Job search query
-            location: Location to search in
-            pages: Number of pages to scrape
-            
-        Returns:
-            List of job dictionaries
         """
         self.jobs = []
         self.logger.info(f"Starting Indeed.ie scrape: query='{query}', location='{location}', pages={pages}")
         
+        jobs_per_page = self.config.get('jobs_per_page', 10)
+
         for page in range(pages):
             try:
-                # Calculate start parameter (Indeed uses 10 jobs per page)
-                start = page * 10
+                start = page * jobs_per_page
                 
-                # Build search URL
                 params = {
                     'q': query,
                     'l': location,
@@ -42,25 +36,40 @@ class IndeedScraper(BaseScraper):
                 
                 url = f"{self.base_url}/jobs"
                 
-                # Make request with random user agent
-                headers = {'User-Agent': get_random_user_agent()}
-                
                 self.logger.info(f"Fetching page {page + 1} from Indeed.ie")
-                response = requests.get(url, params=params, headers=headers, timeout=30)
-                response.raise_for_status()
+                try:
+                    response = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
+                    response.raise_for_status()
+                except requests.exceptions.HTTPError as e:
+                    if response.status_code == 403:
+                        self.logger.error("Indeed returned 403 Forbidden (likely bot detection). Stopping scrape.")
+                        break
+                    elif response.status_code == 429:
+                        self.logger.warning("Rate limited (429). Waiting before retrying...")
+                        random_delay(30, 60)
+                        continue
+                    else:
+                        raise e
                 
-                # Parse HTML
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
-                # Find job cards - Indeed uses various class names, we'll try multiple selectors
-                job_cards = soup.find_all('div', class_='job_seen_beacon')
-                
-                if not job_cards:
-                    # Try alternative selector
-                    job_cards = soup.find_all('td', class_='resultContent')
+                # Find job cards using configured selectors
+                job_cards = []
+                for selector in self.config['selectors']['job_card']:
+                    found = soup.select(selector)
+                    if found:
+                        job_cards = found
+                        break
                 
                 self.logger.info(f"Found {len(job_cards)} job listings on page {page + 1}")
                 
+                if not job_cards:
+                    self.logger.warning(f"No jobs found on page {page + 1}. Check selectors or if blocked.")
+                    # If we found 0 jobs on page 1, we might be blocked or selectors changed.
+                    # If we found 0 on page > 1, maybe we reached the end.
+                    if page == 0:
+                        self.logger.debug(f"HTML Content: {response.text[:500]}...")
+
                 for card in job_cards:
                     try:
                         job = self._parse_job_card(card)
@@ -70,7 +79,6 @@ class IndeedScraper(BaseScraper):
                         self.logger.error(f"Error parsing job card: {e}")
                         continue
                 
-                # Random delay between pages
                 if page < pages - 1:
                     random_delay()
                     
@@ -81,50 +89,53 @@ class IndeedScraper(BaseScraper):
         self.logger.info(f"Indeed.ie scrape completed. Found {len(self.jobs)} jobs total")
         return self.jobs
     
+    def _extract_text(self, card, selector_key):
+        """Helper to extract text using configured selectors."""
+        selectors = self.config['selectors'].get(selector_key, [])
+        if isinstance(selectors, str):
+            selectors = [selectors]
+
+        for selector in selectors:
+            elem = card.select_one(selector)
+            if elem:
+                return self._clean_text(elem.get_text())
+        return ''
+
     def _parse_job_card(self, card):
         """Parse a single job card."""
         try:
             job = {}
             
-            # Title and URL
-            title_elem = card.find('h2', class_='jobTitle')
-            if not title_elem:
-                title_elem = card.find('a', class_='jcs-JobTitle')
-            
-            if title_elem:
-                link = title_elem.find('a') if title_elem.name != 'a' else title_elem
-                if link:
-                    job['title'] = self._clean_text(link.get_text())
-                    job['url'] = self.base_url + link.get('href', '')
-                else:
-                    job['title'] = self._clean_text(title_elem.get_text())
-                    job['url'] = ''
-            else:
+            # Title
+            title = self._extract_text(card, 'title')
+            job['title'] = title
+            if not title:
                 return None
             
-            # Company
-            company_elem = card.find('span', class_='companyName')
-            if not company_elem:
-                company_elem = card.find('span', {'data-testid': 'company-name'})
-            job['company'] = self._clean_text(company_elem.get_text()) if company_elem else ''
+            # URL
+            # Url usually is in the 'title' element which is an anchor or contains an anchor
+            url = ''
+            for selector in self.config['selectors']['title']:
+                elem = card.select_one(selector)
+                if elem:
+                    if elem.name == 'a':
+                        href = elem.get('href')
+                        if href:
+                            url = self.base_url + href if href.startswith('/') else href
+                            break
+                    else:
+                        link = elem.find('a')
+                        if link:
+                            href = link.get('href')
+                            if href:
+                                url = self.base_url + href if href.startswith('/') else href
+                                break
+            job['url'] = url
             
-            # Location
-            location_elem = card.find('div', class_='companyLocation')
-            if not location_elem:
-                location_elem = card.find('div', {'data-testid': 'text-location'})
-            job['location'] = self._clean_text(location_elem.get_text()) if location_elem else ''
-            
-            # Salary
-            salary_elem = card.find('div', class_='salary-snippet')
-            if not salary_elem:
-                salary_elem = card.find('div', {'data-testid': 'attribute_snippet_testid'})
-            job['salary'] = self._clean_text(salary_elem.get_text()) if salary_elem else ''
-            
-            # Description
-            desc_elem = card.find('div', class_='job-snippet')
-            if not desc_elem:
-                desc_elem = card.find('div', {'data-testid': 'job-snippet'})
-            job['description'] = self._clean_text(desc_elem.get_text()) if desc_elem else ''
+            job['company'] = self._extract_text(card, 'company')
+            job['location'] = self._extract_text(card, 'location')
+            job['salary'] = self._extract_text(card, 'salary')
+            job['description'] = self._extract_text(card, 'description')
             
             return job
             

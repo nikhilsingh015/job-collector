@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from datetime import datetime
 import csv
 import os
+from src.config import SCRAPER_CONFIG
 
 
 class BaseScraper(ABC):
@@ -19,6 +20,7 @@ class BaseScraper(ABC):
         self.source_name = source_name
         self.logger = logging.getLogger(f"{__name__}.{source_name}")
         self.jobs = []
+        self.config = SCRAPER_CONFIG.get(source_name, {})
     
     @abstractmethod
     def scrape(self, query, location, pages):
