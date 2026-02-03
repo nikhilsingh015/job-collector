@@ -1,9 +1,11 @@
 # Job Collector
 
-A Python web scraper for educational purposes that collects job listings from Indeed.ie, IrishJobs.ie, and LinkedIn.
+A Python web scraper for educational purposes that automatically parses your CV and collects relevant job listings from Indeed.ie, IrishJobs.ie, and LinkedIn.
 
 ## Features
 
+- **Automatic CV Parsing**: Extracts skills, experience, and job titles from your resume
+- **Smart Job Search**: Generates relevant search queries based on your profile
 - Scrapes job listings from multiple sources:
   - Indeed.ie
   - IrishJobs.ie
@@ -16,9 +18,11 @@ A Python web scraper for educational purposes that collects job listings from In
   - Description
   - URL
 - Saves data to CSV files (per source and merged)
+- Generates HTML reports for easy viewing
 - Implements anti-detection measures:
   - Random delays (3-7 seconds)
   - User-agent rotation
+- Job deduplication using SQLite database
 - Robust error handling and logging
 - Command-line interface for easy use
 
@@ -40,15 +44,56 @@ pip install -r requirements.txt
 playwright install chromium
 ```
 
-## Usage
+## Quick Start (Automated Mode)
 
-Run the scraper with the following command:
+The easiest way to use Job Collector is with the automated mode that parses your CV:
+
+1. Place your CV/Resume PDF in the project directory (filename should contain "CV" or "Resume")
+2. Run:
+```bash
+python main.py
+```
+
+The tool will:
+1. Automatically find and parse your CV
+2. Extract relevant job titles and skills
+3. Search multiple job sites for matching positions
+4. Output a consolidated CSV file with all results
+
+### Automated Mode Options
+
+```bash
+# Use default settings (auto-detect CV, 5 queries, 1 page per source)
+python main.py
+
+# Specify a CV file
+python main.py --cv "path/to/your/cv.pdf"
+
+# Override the search location
+python main.py --location "Cork"
+
+# Scrape more pages per source
+python main.py --pages 3
+
+# Limit the number of search queries
+python main.py --queries-limit 3
+
+# Specify output file
+python main.py --output "my_jobs.csv"
+
+# Ignore job history (include previously seen jobs)
+python main.py --ignore-history
+```
+
+## Manual Mode
+
+You can also run the scraper manually with specific queries:
 
 ```bash
 python scraper.py --query "software engineer" --location "Dublin" --pages 2
 ```
 
-### Command-line Arguments
+### Manual Mode Arguments
 
 - `--query`: Job search query (required)
   - Example: "software engineer", "data scientist", "product manager"
@@ -108,14 +153,21 @@ job-collector/
 ├── src/
 │   ├── __init__.py
 │   ├── base_scraper.py      # Base scraper class
+│   ├── cv_parser.py         # CV/Resume PDF parser
+│   ├── config.py            # Configuration settings
 │   ├── indeed_scraper.py    # Indeed.ie scraper
 │   ├── irishjobs_scraper.py # IrishJobs.ie scraper
 │   ├── linkedin_scraper.py  # LinkedIn scraper
+│   ├── network.py           # Network utilities
+│   ├── reporter.py          # HTML report generator
+│   ├── storage.py           # Job history storage
 │   └── utils.py             # Utility functions
 ├── data/                     # Output directory for CSV files
-├── scraper.py               # Main CLI script
+├── main.py                  # Automated CV-based job collector
+├── scraper.py               # Manual CLI script
+├── test_scraper.py          # Test suite
 ├── requirements.txt         # Python dependencies
-└── README.md               # This file
+└── README.md                # This file
 ```
 
 ## Testing
