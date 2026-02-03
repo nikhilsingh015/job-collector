@@ -15,7 +15,7 @@ import csv
 from datetime import datetime
 import os
 import logging
-import glob as glob_module
+import glob
 
 from src.utils import setup_logging
 from src.cv_parser import CVParser
@@ -51,13 +51,13 @@ def find_cv_file(directory: str = ".") -> str:
     ]
 
     for pattern in patterns:
-        matches = glob_module.glob(os.path.join(directory, pattern))
+        matches = glob.glob(os.path.join(directory, pattern))
         if matches:
             logger.info(f"Found CV file: {matches[0]}")
             return matches[0]
 
     # If no match with patterns, look for any PDF
-    pdf_files = glob_module.glob(os.path.join(directory, "*.pdf"))
+    pdf_files = glob.glob(os.path.join(directory, "*.pdf"))
     if pdf_files:
         logger.info(f"Using PDF file as CV: {pdf_files[0]}")
         return pdf_files[0]

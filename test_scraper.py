@@ -8,7 +8,6 @@ import os
 from datetime import datetime
 import logging
 import shutil
-import tempfile
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))

@@ -330,11 +330,11 @@ class CVParser:
         if edu_section:
             edu_text = edu_section.group(1)
 
-            # Common degree patterns
+            # Common degree patterns - handle various formats like MSC, M.S.C., MSc, etc.
             degree_patterns = [
-                r"(MSC?|M\.S\.?|MASTER(?:'?S)?)\s+(?:IN\s+)?([A-Za-z\s]+)",
-                r"(BSC?|B\.S\.?|BACHELOR(?:'?S)?)\s+(?:OF\s+)?(?:ENGINEERING\s+IN\s+)?([A-Za-z\s]+)",
-                r"(PHD|PH\.D\.?|DOCTORATE)\s+(?:IN\s+)?([A-Za-z\s]+)",
+                r"(M\.?S\.?C\.?|MSC|M\.?Sc\.?|MASTER(?:'?S)?)\s+(?:IN\s+)?([A-Za-z\s]+)",
+                r"(B\.?S\.?C\.?|BSC|B\.?Sc\.?|BACHELOR(?:'?S)?)\s+(?:OF\s+)?(?:ENGINEERING\s+IN\s+)?([A-Za-z\s]+)",
+                r"(PH\.?D\.?|PHD|DOCTORATE)\s+(?:IN\s+)?([A-Za-z\s]+)",
             ]
 
             for pattern in degree_patterns:
