@@ -2,8 +2,9 @@
 import requests
 from bs4 import BeautifulSoup
 from src.base_scraper import BaseScraper
-from src.utils import get_random_user_agent, random_delay
-import logging
+from src.utils import random_delay
+from src.network import create_session
+from src.config import REQUEST_TIMEOUT
 
 
 class IrishJobsScraper(BaseScraper):
@@ -11,27 +12,18 @@ class IrishJobsScraper(BaseScraper):
     
     def __init__(self):
         super().__init__('irishjobs')
-        self.base_url = 'https://www.irishjobs.ie'
+        self.base_url = self.config.get('base_url', 'https://www.irishjobs.ie')
+        self.session = create_session()
     
     def scrape(self, query, location, pages=1):
         """
         Scrape jobs from IrishJobs.ie.
-        
-        Args:
-            query: Job search query
-            location: Location to search in
-            pages: Number of pages to scrape
-            
-        Returns:
-            List of job dictionaries
         """
         self.jobs = []
         self.logger.info(f"Starting IrishJobs.ie scrape: query='{query}', location='{location}', pages={pages}")
         
         for page in range(1, pages + 1):
             try:
-                # Build search URL
-                # IrishJobs uses a different URL structure
                 search_url = f"{self.base_url}/jobs"
                 params = {
                     'Keywords': query,
@@ -39,26 +31,30 @@ class IrishJobsScraper(BaseScraper):
                     'Page': page
                 }
                 
-                # Make request with random user agent
-                headers = {'User-Agent': get_random_user_agent()}
-                
                 self.logger.info(f"Fetching page {page} from IrishJobs.ie")
-                response = requests.get(search_url, params=params, headers=headers, timeout=30)
-                response.raise_for_status()
-                
-                # Parse HTML
+                try:
+                    response = self.session.get(search_url, params=params, timeout=REQUEST_TIMEOUT)
+                    response.raise_for_status()
+                except requests.exceptions.HTTPError as e:
+                    self.logger.error(f"HTTP Error: {e}")
+                    if response.status_code == 404:
+                         self.logger.warning("Page not found, stopping pagination.")
+                         break
+                    continue
+
                 soup = BeautifulSoup(response.content, 'html.parser')
                 
-                # Find job cards - IrishJobs specific selectors
-                job_cards = soup.find_all('article', class_='job')
-                
-                if not job_cards:
-                    # Try alternative selectors
-                    job_cards = soup.find_all('div', class_='job-item')
+                # Find job cards
+                job_cards = []
+                for selector in self.config['selectors']['job_card']:
+                    found = soup.select(selector)
+                    if found:
+                        job_cards = found
+                        break
                 
                 self.logger.info(f"Found {len(job_cards)} job listings on page {page}")
                 
-                if len(job_cards) == 0:
+                if not job_cards:
                     self.logger.warning(f"No jobs found on page {page}, stopping pagination")
                     break
                 
@@ -71,7 +67,6 @@ class IrishJobsScraper(BaseScraper):
                         self.logger.error(f"Error parsing job card: {e}")
                         continue
                 
-                # Random delay between pages
                 if page < pages:
                     random_delay()
                     
@@ -82,51 +77,50 @@ class IrishJobsScraper(BaseScraper):
         self.logger.info(f"IrishJobs.ie scrape completed. Found {len(self.jobs)} jobs total")
         return self.jobs
     
+    def _extract_text(self, card, selector_key):
+        """Helper to extract text using configured selectors."""
+        selectors = self.config['selectors'].get(selector_key, [])
+        if isinstance(selectors, str):
+            selectors = [selectors]
+
+        for selector in selectors:
+            elem = card.select_one(selector)
+            if elem:
+                return self._clean_text(elem.get_text())
+        return ''
+
     def _parse_job_card(self, card):
         """Parse a single job card."""
         try:
             job = {}
             
-            # Title and URL
-            title_elem = card.find('h2', class_='job-title')
-            if not title_elem:
-                title_elem = card.find('a', class_='job-link')
-            
-            if title_elem:
-                link = title_elem.find('a') if title_elem.name != 'a' else title_elem
-                if link:
-                    job['title'] = self._clean_text(link.get_text())
-                    href = link.get('href', '')
-                    job['url'] = self.base_url + href if href.startswith('/') else href
-                else:
-                    job['title'] = self._clean_text(title_elem.get_text())
-                    job['url'] = ''
-            else:
+            job['title'] = self._extract_text(card, 'title')
+            if not job['title']:
                 return None
             
-            # Company
-            company_elem = card.find('span', class_='company')
-            if not company_elem:
-                company_elem = card.find('div', class_='employer')
-            job['company'] = self._clean_text(company_elem.get_text()) if company_elem else ''
+            # URL
+            url = ''
+            for selector in self.config['selectors']['title']:
+                elem = card.select_one(selector)
+                if elem:
+                    if elem.name == 'a':
+                        href = elem.get('href')
+                        if href:
+                             url = self.base_url + href if href.startswith('/') else href
+                             break
+                    else:
+                        link = elem.find('a')
+                        if link:
+                            href = link.get('href')
+                            if href:
+                                url = self.base_url + href if href.startswith('/') else href
+                                break
+            job['url'] = url
             
-            # Location
-            location_elem = card.find('span', class_='location')
-            if not location_elem:
-                location_elem = card.find('div', class_='job-location')
-            job['location'] = self._clean_text(location_elem.get_text()) if location_elem else ''
-            
-            # Salary
-            salary_elem = card.find('span', class_='salary')
-            if not salary_elem:
-                salary_elem = card.find('div', class_='job-salary')
-            job['salary'] = self._clean_text(salary_elem.get_text()) if salary_elem else ''
-            
-            # Description
-            desc_elem = card.find('div', class_='job-description')
-            if not desc_elem:
-                desc_elem = card.find('p', class_='description')
-            job['description'] = self._clean_text(desc_elem.get_text()) if desc_elem else ''
+            job['company'] = self._extract_text(card, 'company')
+            job['location'] = self._extract_text(card, 'location')
+            job['salary'] = self._extract_text(card, 'salary')
+            job['description'] = self._extract_text(card, 'description')
             
             return job
             
