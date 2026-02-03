@@ -8,6 +8,7 @@ import os
 from datetime import datetime
 import logging
 import shutil
+import tempfile
 
 # Add src to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '.'))
@@ -16,6 +17,7 @@ from src.base_scraper import BaseScraper
 from src.utils import setup_logging
 from src.storage import JobStorage
 from src.reporter import HtmlReporter
+from src.cv_parser import CVParser
 
 
 class MockScraper(BaseScraper):
@@ -44,6 +46,81 @@ class MockScraper(BaseScraper):
         
         self.logger.info(f"Mock scrape completed. Generated {len(self.jobs)} mock jobs")
         return self.jobs
+
+
+def test_cv_parser():
+    """Test CVParser functionality."""
+    logger = logging.getLogger(__name__)
+    logger.info("\n" + "=" * 80)
+    logger.info("Testing CVParser")
+    logger.info("=" * 80)
+
+    # Find CV file in the current directory
+    cv_file = None
+    for f in os.listdir('.'):
+        if f.endswith('.pdf') and ('cv' in f.lower() or 'resume' in f.lower()):
+            cv_file = f
+            break
+
+    if not cv_file:
+        # Try to find any PDF
+        for f in os.listdir('.'):
+            if f.endswith('.pdf'):
+                cv_file = f
+                break
+
+    if not cv_file:
+        logger.warning("✗ No CV PDF file found for testing, skipping CV parser test")
+        return True  # Skip test but don't fail
+
+    try:
+        parser = CVParser(cv_file)
+        profile = parser.parse()
+
+        # Validate essential fields were extracted
+        if profile.get('name'):
+            logger.info(f"✓ Extracted name: {profile['name']}")
+        else:
+            logger.error("✗ Failed to extract name")
+            return False
+
+        if profile.get('location'):
+            logger.info(f"✓ Extracted location: {profile['location']}")
+        else:
+            logger.warning("⚠ Location not found (may be expected)")
+
+        if profile.get('skills') and len(profile['skills']) > 0:
+            logger.info(f"✓ Extracted {len(profile['skills'])} skills")
+        else:
+            logger.error("✗ Failed to extract skills")
+            return False
+
+        if profile.get('job_search_queries') and len(profile['job_search_queries']) > 0:
+            logger.info(f"✓ Generated {len(profile['job_search_queries'])} job search queries")
+        else:
+            logger.error("✗ Failed to generate job search queries")
+            return False
+
+        # Test helper methods
+        search_location = parser.get_search_location()
+        if search_location:
+            logger.info(f"✓ get_search_location returned: {search_location}")
+        else:
+            logger.warning("⚠ get_search_location returned empty")
+
+        search_queries = parser.get_search_queries()
+        if search_queries:
+            logger.info(f"✓ get_search_queries returned {len(search_queries)} queries")
+        else:
+            logger.error("✗ get_search_queries returned empty")
+            return False
+
+        logger.info("✓ CVParser test completed successfully")
+        return True
+
+    except Exception as e:
+        logger.error(f"✗ CVParser test failed with error: {e}")
+        return False
 
 
 def test_storage():
@@ -194,6 +271,9 @@ def test_csv_functionality():
 def main():
     setup_logging()
     
+    if not test_cv_parser():
+        sys.exit(1)
+
     if not test_storage():
         sys.exit(1)
 
