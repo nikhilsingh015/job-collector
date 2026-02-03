@@ -12,6 +12,7 @@ import csv
 from datetime import datetime
 import os
 import logging
+import concurrent.futures
 
 from src.utils import setup_logging
 from src.indeed_scraper import IndeedScraper
@@ -63,6 +64,25 @@ def merge_csv_files(csv_files, output_filename):
         logger.warning("No jobs found to merge")
 
     return all_jobs
+
+
+def process_scraper(scraper, query, location, pages):
+    """
+    Run a single scraper process and return the scraper instance and scraped jobs.
+    """
+    logger = logging.getLogger(__name__)
+    try:
+        logger.info(f"\n{'=' * 80}")
+        logger.info(f"Starting {scraper.source_name} scraper")
+        logger.info(f"{'=' * 80}")
+
+        # Scrape jobs
+        jobs = scraper.scrape(query, location, pages)
+        return scraper, jobs
+
+    except Exception as e:
+        logger.error(f"Error running {scraper.source_name} scraper: {e}", exc_info=True)
+        return scraper, []
 
 
 def main():
@@ -132,45 +152,49 @@ Examples:
     csv_files = []
     date_str = datetime.now().strftime('%Y%m%d')
     
-    # Run each scraper
-    for scraper in scrapers:
-        try:
-            logger.info(f"\n{'=' * 80}")
-            logger.info(f"Starting {scraper.source_name} scraper")
-            logger.info(f"{'=' * 80}")
-            
-            # Scrape jobs
-            jobs = scraper.scrape(args.query, args.location, args.pages)
-            
-            # Filter duplicates if not ignoring history
-            if not args.ignore_history:
-                new_jobs = []
-                for job in jobs:
-                    if storage.is_job_new(job['url']):
-                        new_jobs.append(job)
+    # Run scrapers in parallel
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(scrapers)) as executor:
+        future_to_scraper = {
+            executor.submit(process_scraper, scraper, args.query, args.location, args.pages): scraper
+            for scraper in scrapers
+        }
+
+        for future in concurrent.futures.as_completed(future_to_scraper):
+            # Retrieve result from future
+            try:
+                scraper, jobs = future.result()
+            except Exception as e:
+                logger.error(f"Scraper task generated an exception: {e}")
+                continue
+
+            # Process jobs sequentially (thread-safe for DB/File I/O)
+            try:
+                if not args.ignore_history:
+                    new_jobs = []
+                    for job in jobs:
+                        if storage.is_job_new(job['url']):
+                            new_jobs.append(job)
+                            storage.add_job(job)
+                        else:
+                            logger.debug(f"Skipping seen job: {job['title']} at {job['company']}")
+
+                    logger.info(f"[{scraper.source_name}] Filtered {len(jobs) - len(new_jobs)} duplicates. {len(new_jobs)} new jobs.")
+                    scraper.jobs = new_jobs
+                else:
+                    for job in jobs:
                         storage.add_job(job)
-                    else:
-                        logger.debug(f"Skipping seen job: {job['title']} at {job['company']}")
+                    scraper.jobs = jobs
 
-                logger.info(f"Filtered {len(jobs) - len(new_jobs)} duplicates. {len(new_jobs)} new jobs.")
-                scraper.jobs = new_jobs
-            else:
-                # Still add to storage to mark them as seen for future runs?
-                # Yes, if we run with ignore-history, we probably still want to update our DB.
-                for job in jobs:
-                    storage.add_job(job)
+                # Save to CSV
+                if scraper.jobs:
+                    csv_file = scraper.save_to_csv()
+                    if csv_file:
+                        csv_files.append(csv_file)
+                else:
+                    logger.warning(f"No new jobs found for {scraper.source_name}")
+            except Exception as e:
+                logger.error(f"Error processing results for {scraper.source_name}: {e}")
 
-            # Save to CSV
-            if scraper.jobs:
-                csv_file = scraper.save_to_csv()
-                if csv_file:
-                    csv_files.append(csv_file)
-            else:
-                logger.warning(f"No new jobs found for {scraper.source_name}")
-                
-        except Exception as e:
-            logger.error(f"Error running {scraper.source_name} scraper: {e}", exc_info=True)
-            continue
     
     # Merge all CSV files
     if csv_files:
