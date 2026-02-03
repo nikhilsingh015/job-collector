@@ -50,7 +50,7 @@ class IndeedScraper(BaseScraper):
                         
                         # Get the page HTML
                         html = page.content()
-                        soup = BeautifulSoup(html, 'html.parser')
+                        soup = BeautifulSoup(html, 'lxml')
                         
                         # Find job cards using configured selectors
                         job_cards = []
@@ -173,7 +173,7 @@ class IndeedScraper(BaseScraper):
                 self._debug_saved = True
                 self.logger.info(f"Saved debug HTML to debug_job_page.html")
             
-            soup = BeautifulSoup(html, 'html.parser')
+            soup = BeautifulSoup(html, 'lxml')
             
             # Extract full job description
             description_selectors = [
