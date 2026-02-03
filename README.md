@@ -79,13 +79,21 @@ The scraper creates the following files in the `data/` directory:
 - `jobs_merged_YYYYMMDD.csv` - All jobs combined from all sources
 
 Each CSV file contains the following columns:
-- title
-- company
-- location
-- salary
-- description
-- url
-- source
+- `title` - Job title
+- `company` - Company name
+- `location` - Job location
+- `salary` - Salary information (if available)
+- `description` - Job description snippet
+- `url` - Link to full job posting
+- `source` - Source website (indeed, irishjobs, or linkedin)
+
+### Example Output
+
+```
+title,company,location,salary,description,url,source
+Software Engineer,Tech Company,Dublin,"€50,000 - €70,000",We are looking for a talented engineer...,https://ie.indeed.com/jobs/...,indeed
+Senior Developer,Innovation Ltd,Cork,€60,000+,Join our growing team...,https://www.irishjobs.ie/jobs/...,irishjobs
+```
 
 ## Logging
 
@@ -110,6 +118,22 @@ job-collector/
 └── README.md               # This file
 ```
 
+## Testing
+
+A test script is provided to validate the scraper functionality:
+
+```bash
+python test_scraper.py
+```
+
+This test script uses mock data to verify:
+- CSV file creation and formatting
+- Data merging functionality
+- Logging system
+- Base scraper functionality
+
+**Note**: The actual scrapers require internet access to the job websites. The test script demonstrates the functionality without requiring external network access.
+
 ## Educational Purpose
 
 This scraper is built for educational purposes to demonstrate:
@@ -119,7 +143,12 @@ This scraper is built for educational purposes to demonstrate:
 - Error handling and logging
 - Command-line interface development
 
-**Note**: Always respect website terms of service and robots.txt files. Use responsibly and ethically.
+**Important Notes**:
+- Always respect website terms of service and robots.txt files
+- Use responsibly and ethically
+- Implement appropriate delays to avoid overloading servers
+- Be aware that websites may change their HTML structure, requiring scraper updates
+- Some websites may block scraping attempts; this is for educational purposes only
 
 ## Requirements
 
